@@ -27,8 +27,11 @@ var (
 
 var phpExts = map[string]bool{"php": true, "phtml": true, "php5": true, "php7": true, "phar": true, "inc": true}
 
-// uploadDirs are directory names where executable PHP should never live.
-var uploadDirs = []string{"uploads", "upload", "files", "media", "attachments"}
+// uploadDirs are directory names that hold user-uploaded content where
+// executable PHP should never legitimately live. Kept deliberately narrow:
+// generic names like "files"/"media" also appear in legit app structure
+// (admin/files file-managers, Modules/Media), so they are excluded.
+var uploadDirs = []string{"uploads", "upload"}
 
 // Analyze scores content at path. parentDirMtime/fileMtime (unix seconds) enable the
 // timestomping check; pass 0 to skip.
