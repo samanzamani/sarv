@@ -1,0 +1,259 @@
+# Signature rules for common PHP webshells and obfuscated droppers.
+# Format: see internal/rules/rules.go (Rule struct).
+
+- id: php-eval-base64
+  description: eval of base64-decoded payload
+  severity: critical
+  extensions: [php, phtml, php5, php7, phar, inc]
+  regex:
+    - 'eval\s*\(\s*base64_decode\s*\('
+    - 'eval\s*\(\s*gzinflate\s*\(\s*base64_decode'
+    - 'eval\s*\(\s*gzuncompress\s*\('
+    - 'eval\s*\(\s*str_rot13\s*\('
+
+- id: php-eval-request
+  description: eval/assert directly on request input (classic one-line shell)
+  severity: critical
+  # Anchored to real superglobals. A looser `eval($_...` pattern also matched
+  # legit locals like psysh's $__psysh__, so it was removed.
+  regex:
+    - 'eval\s*\(\s*\$_(POST|GET|REQUEST|COOKIE|SERVER|FILES)\s*\['
+    - 'assert\s*\(\s*\$_(POST|GET|REQUEST|COOKIE|SERVER|FILES)\s*\['
+    - '@?eval\s*\(\s*\$\{\s*["'']_(POST|GET|REQUEST|COOKIE)'
+
+- id: php-variable-function-request
+  description: request parameter invoked as a function ($_POST[x]($_POST[y]))
+  severity: critical
+  regex:
+    - '\$_(POST|GET|REQUEST|COOKIE)\s*\[[^\]]{1,40}\]\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)'
+
+- id: php-system-request
+  description: shell execution fed by request input
+  severity: critical
+  regex:
+    - '(system|passthru|shell_exec|exec|popen|proc_open)\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)'
+    - 'pcntl_exec\s*\('
+
+# Note: a dedicated backtick-execution rule was removed — PHP docblocks across
+# WordPress/Laravel write `$_POST['x']` as inline-code markdown, which is
+# indistinguishable from real `...$_GET...` execution without parsing PHP.
+# Backtick shells fed by request input are also covered by php-system-request
+# via shell_exec/exec when they matter.
+
+- id: php-preg-replace-e
+  description: preg_replace with /e modifier (code execution)
+  severity: high
+  regex:
+    - 'preg_replace\s*\(\s*["'']([^"'']*)/[a-zA-Z]*e[a-zA-Z]*["'']'
+
+- id: php-create-function-obfuscated
+  description: create_function with decoded payload
+  severity: high
+  regex:
+    - 'create_function\s*\([^)]*base64_decode'
+    - 'create_function\s*\(\s*["'']["'']\s*,\s*\$'
+
+- id: php-known-shell-names
+  description: marker strings of well-known webshells (WSO, c99, r57, b374k, alfa, FilesMan)
+  severity: critical
+  istrings:
+    - "FilesMan"
+    - "WSO_VERSION"
+    - "c99shell"
+    - "c99sh_"
+    - "r57shell"
+    - "b374k"
+    - "ALFA_DATA"
+    - "alfashell"
+    - "IndoXploit"
+    - "AnonymousFox"
+    - "Sh3ll"
+    - "0byt3m1n1"
+    - "Priv8"
+    - "wso shell"
+    - "mini shell"
+    - "gecko shell"
+
+- id: php-obfuscated-globals
+  description: obfuscated $GLOBALS-based decoder loop (common WP injections)
+  severity: high
+  regex:
+    - '\$GLOBALS\[["'']\w{1,12}["'']\]\s*=\s*["''][\\x0-9a-fA-F]{40,}'
+    - '\$GLOBALS\[\s*\$\w+\s*\[\s*\d+\s*\]\s*\.\s*\$\w+\s*\['
+
+- id: php-chr-concat-decoder
+  description: long chr() concatenation decoder feeding eval/exec
+  severity: high
+  # Requires both a long chr()-concat run AND an eval-family call — a chr() run
+  # alone appears in legit libraries (doctrine/inflector unicode tables).
+  min_matches: 2
+  regex:
+    - '(chr\(\d+\)\s*\.\s*){12,}'
+    - '(eval|assert|create_function|call_user_func)\s*\('
+
+- id: php-goto-obfuscation
+  description: goto-based obfuscation (common in recent WP malware)
+  severity: high
+  regex:
+    - '(goto\s+\w{1,6};\s*){6,}'
+
+- id: php-error-suppress-include-request
+  description: include/require of request-controlled or wrapper path
+  severity: high
+  regex:
+    - '(include|require)(_once)?\s*\(?\s*\$_(POST|GET|REQUEST|COOKIE)'
+    - '(include|require)(_once)?\s*\(?\s*["'']php://input'
+    - '(include|require)(_once)?\s*\(?\s*["'']data:'
+
+- id: php-file-put-request
+  description: dropper writing request payload to disk
+  severity: critical
+  regex:
+    - 'file_put_contents\s*\([^,]{1,80},\s*(base64_decode\s*\(\s*)?\$_(POST|GET|REQUEST|COOKIE)'
+    - 'fwrite\s*\(\s*\$\w+\s*,\s*\$_(POST|GET|REQUEST|COOKIE)'
+    - 'move_uploaded_file\s*\([^,]+,\s*\$_(GET|POST|REQUEST|COOKIE)'
+
+- id: php-callback-exec
+  description: dangerous callback functions used to run request input
+  severity: high
+  regex:
+    - '(call_user_func(_array)?|array_map|array_filter|usort|uasort|register_shutdown_function|ob_start)\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)'
+    - '(call_user_func(_array)?)\s*\(\s*(base64_decode|str_rot13)\s*\('
+
+- id: php-extract-request
+  description: extract() on request superglobal (variable injection)
+  severity: medium
+  regex:
+    - 'extract\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)'
+
+- id: php-auth-md5-backdoor
+  description: hardcoded md5 password gate (typical protected shell)
+  severity: high
+  regex:
+    - 'md5\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)\s*\[[^\]]+\]\s*\)\s*==+\s*["''][0-9a-f]{32}["'']'
+
+- id: php-mailer-spam
+  description: bulk mailer webshell markers
+  severity: high
+  # Marker strings only. A generic "for-loop + mail()" pattern also matches the
+  # legitimate PHPMailer library shipped inside WordPress, so it is not used.
+  istrings:
+    - "leafmailer"
+    - "Leaf PHPMailer"
+    - "PHPMailer bulk"
+    - "priv8 mailer"
+    - "inbox mailer"
+
+- id: php-uploader-marker
+  description: standalone upload-form shell markers
+  severity: high
+  regex:
+    - '<input[^>]+type=["'']?file["'']?[^>]*>[\s\S]{0,400}move_uploaded_file'
+  istrings:
+    - "Uploader by"
+    - "upload your shell"
+
+- id: php-wp-fake-plugin-eval
+  description: WordPress dropper patterns (fake plugin/theme code with eval chain)
+  severity: high
+  regex:
+    - 'add_action\s*\(\s*["''](wp_head|init|wp_footer)["'']\s*,[^)]{0,60}(base64_decode|eval|assert)'
+    - 'wp_insert_user\s*\([^)]*administrator'
+
+- id: php-curl-remote-code
+  description: fetch remote code and evaluate it
+  severity: high
+  # Must combine a remote fetch with direct evaluation. A generic
+  # "file_get_contents…file_put_contents" pattern matched legit installers
+  # (Laravel Composer.php, Livewire StubsCommand), so it is not used.
+  regex:
+    - 'eval\s*\(\s*(file_get_contents|curl_exec|@?file_get_contents)\s*\('
+    - 'eval\s*\(\s*\w+\s*\(\s*["'']https?://[^"'']+["'']\s*\)\s*\)'
+    - 'assert\s*\(\s*file_get_contents\s*\(\s*["'']https?://'
+
+- id: php-htaccess-handler
+  description: .htaccess mapping non-PHP extensions to the PHP handler or auto-prepending code
+  severity: high
+  extensions: [htaccess]
+  regex:
+    - 'AddHandler\s+application/x-httpd-php'
+    - 'AddType\s+application/x-httpd-php\s+\.(jpg|jpeg|png|gif|ico|txt)'
+    - 'php_value\s+auto_prepend_file'
+    - 'SetHandler\s+application/x-httpd-php'
+
+- id: php-ini-prepend
+  description: php.ini/.user.ini auto_prepend_file injection
+  severity: high
+  extensions: [ini]
+  # Only an active (non-commented) directive with a non-empty value on the same
+  # line. Stock php.ini ships both a commented ";auto_prepend_file =" line and
+  # an active but empty "auto_prepend_file =" line — neither is malicious.
+  # Note: value chars are matched on-line ([ \t], not \s) so an empty directive
+  # can't swallow the next line's content.
+  regex:
+    - '(?m)^[ \t]*auto_prepend_file[ \t]*=[ \t]*["'']?[^\s;"'']'
+
+- id: php-short-obfuscated-oneliner
+  description: very short PHP file that only decodes and evaluates
+  severity: high
+  regex:
+    - '^<\?php\s+(@?\w{1,20}\s*\(\s*){1,4}(base64_decode|gzinflate|str_rot13|strrev|hex2bin)\s*\('
+
+- id: php-assert-alias
+  description: assert hidden behind variable alias
+  severity: high
+  regex:
+    - '\$\w+\s*=\s*["'']assert["'']\s*;'
+    - '\$\w+\s*=\s*["'']ev["'']\s*\.\s*["'']al["'']'
+    - '["'']\s*\.\s*["'']ass["'']\s*\.\s*["'']ert["'']'
+
+- id: php-ico-with-code
+  description: PHP code hidden in image/icon file
+  severity: critical
+  extensions: [ico, jpg, jpeg, png, gif, svg, bmp]
+  strings:
+    - "<?php"
+  regex:
+    - '<\?php[\s\S]{0,400}(eval|assert|base64_decode|system|shell_exec)'
+  min_matches: 2
+
+- id: php-session-exec
+  description: payload staged in session/cookie then executed
+  severity: high
+  regex:
+    - 'eval\s*\(\s*\$_SESSION\['
+    - 'eval\s*\(\s*\$_COOKIE\['
+    - 'assert\s*\(\s*\$_SESSION\['
+
+- id: php-anti-analysis
+  description: anti-analysis markers (disable logging, hide errors + exec combo)
+  severity: medium
+  regex:
+    - 'error_reporting\s*\(\s*0\s*\)\s*;\s*@?(ini_set|set_time_limit)[\s\S]{0,200}(base64_decode|eval|gzinflate)'
+
+- id: js-crypto-miner
+  description: in-browser crypto miner loader
+  severity: high
+  extensions: [js, php, html, htm]
+  istrings:
+    - "coinhive.min.js"
+    - "cryptonight.wasm"
+    - "CoinHive.Anonymous"
+    - "deepMiner"
+    - "webmr.js"
+
+- id: js-malicious-redirect
+  description: injected JS redirect/loader domains seen in mass WP infections
+  severity: high
+  extensions: [js, php, html, htm]
+  istrings:
+    - "String.fromCharCode(104,116,116,112"
+  regex:
+    - 'document\.write\s*\(\s*unescape\s*\(\s*["'']%3C%73%63%72%69%70%74'
+    - 'eval\s*\(\s*String\.fromCharCode\s*\((\s*\d+\s*,){20,}'
+
+# A generic "system recon markers" rule was removed: legit libraries such as
+# PHPMailer (php_uname, safe_mode checks) and elFinder (file-manager features)
+# combine enough of those tokens to trip it. Real shells are caught by the
+# specific rules above (known shell names, eval/assert on request input,
+# request-driven exec, variable-function calls).

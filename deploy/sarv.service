@@ -1,0 +1,21 @@
+[Unit]
+Description=Sarv — web server malware guard (realtime monitor + scheduled scans)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sarv monitor
+Restart=on-failure
+RestartSec=5
+# Keep scans off the critical path of production sites.
+Nice=19
+IOSchedulingClass=idle
+# Hardening: the service needs to read the whole filesystem but only writes to its data dir.
+ProtectSystem=full
+ReadWritePaths=/var/lib/sarv /etc/sarv
+NoNewPrivileges=true
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

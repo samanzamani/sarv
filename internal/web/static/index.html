@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sarv — Web Malware Guard</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--border:#334155;--text:#e2e8f0;--muted:#94a3b8;
+--accent:#22c55e;--red:#ef4444;--orange:#f97316;--yellow:#eab308;--blue:#3b82f6}
+*{box-sizing:border-box;margin:0}
+body{font:14px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+a{color:var(--blue)}
+.wrap{max-width:1100px;margin:0 auto;padding:20px}
+header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border)}
+header h1{font-size:18px}header h1 span{color:var(--accent)}
+header .spacer{flex:1}
+nav{display:flex;gap:4px;flex-wrap:wrap;margin:16px 0}
+nav button{background:none;border:1px solid var(--border);color:var(--muted);padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px}
+nav button.on{background:var(--card);color:var(--text);border-color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.stat{text-align:center;padding:18px 8px}
+.stat .n{font-size:30px;font-weight:700}
+.stat .l{color:var(--muted);font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{color:var(--muted);text-align:left;font-weight:500;padding:6px 8px;border-bottom:1px solid var(--border)}
+td{padding:7px 8px;border-bottom:1px solid #26334a;vertical-align:top;word-break:break-all}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.critical{background:#7f1d1d;color:#fecaca}.high{background:#7c2d12;color:#fed7aa}
+.medium{background:#713f12;color:#fef08a}.low{background:#1e3a8a;color:#bfdbfe}
+.open{background:#7f1d1d;color:#fecaca}.quarantined{background:#4c1d95;color:#ddd6fe}
+.ignored{background:#374151;color:#d1d5db}.resolved{background:#14532d;color:#bbf7d0}
+.done{background:#14532d;color:#bbf7d0}.dismissed{background:#374151;color:#d1d5db}
+button.act{background:var(--blue);border:0;color:#fff;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;margin:1px}
+button.act.warn{background:var(--red)}button.act.ok{background:var(--accent);color:#052e16}
+button.act.ghost{background:transparent;border:1px solid var(--border);color:var(--muted)}
+input,select{background:#0f172a;border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:8px;width:100%;font-size:14px}
+label{display:block;color:var(--muted);font-size:12px;margin:10px 0 4px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#login{max-width:340px;margin:12vh auto}
+.msg{padding:10px;border-radius:8px;margin:10px 0;font-size:13px;display:none}
+.msg.err{background:#7f1d1d;display:block}.msg.ok{background:#14532d;display:block}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+@media(max-width:700px){td:nth-child(4),th:nth-child(4){display:none}}
+</style>
+</head>
+<body>
+
+<div id="login" class="card" style="display:none">
+  <h2 style="margin-bottom:6px">🛡 Sarv</h2>
+  <p class="muted small">Web server malware guard — sign in</p>
+  <div id="lmsg" class="msg err"></div>
+  <label>Username</label><input id="user" autocomplete="username">
+  <label>Password</label><input id="pass" type="password" autocomplete="current-password">
+  <div style="margin-top:14px"><button class="act ok" style="width:100%;padding:9px" onclick="login()">Sign in</button></div>
+</div>
+
+<div id="app" style="display:none">
+<header>
+  <h1>🛡 <span>Sarv</span></h1>
+  <span class="muted small" id="scanState"></span>
+  <div class="spacer"></div>
+  <button class="act ghost" onclick="logout()">Sign out</button>
+</header>
+<div class="wrap">
+  <nav id="tabs"></nav>
+  <div id="view"></div>
+</div>
+</div>
+
+<script>
+const TABS=[["dash","Dashboard"],["findings","Findings"],["quar","Quarantine"],["scan","Scan"],["sys","System Health"],["advice","Recommendations"],["settings","Settings"]];
+let tab="dash";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+async function api(path,opt){const r=await fetch("/api/"+path,opt);if(r.status===401){show(false);throw new Error("unauthorized")}const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+function show(logged){$("#login").style.display=logged?"none":"block";$("#app").style.display=logged?"block":"none"}
+async function login(){try{await api("login",{method:"POST",body:JSON.stringify({Username:$("#user").value,Password:$("#pass").value})});show(true);render()}catch(e){const m=$("#lmsg");m.textContent=e.message;m.className="msg err"}}
+async function logout(){try{await api("logout",{method:"POST"})}catch(e){}show(false)}
+function tag(v){return `<span class="tag ${esc(v)}">${esc(v)}</span>`}
+function nav(){$("#tabs").innerHTML=TABS.map(([id,l])=>`<button class="${tab===id?'on':''}" onclick="go('${id}')">${l}</button>`).join("")}
+function go(t){tab=t;render()}
+async function render(){nav();try{await views[tab]()}catch(e){$("#view").innerHTML=`<div class="card">Error: ${esc(e.message)}</div>`}}
+
+const views={
+async dash(){
+  const o=await api("overview");
+  $("#scanState").textContent=o.scan_status&&o.scan_status.running?`scanning… ${o.scan_status.done||0} files`:"";
+  $("#view").innerHTML=`
+  <div class="grid">
+    <div class="card stat"><div class="n" style="color:${o.open_findings?'var(--red)':'var(--accent)'}">${o.open_findings}</div><div class="l">Open findings</div></div>
+    <div class="card stat"><div class="n">${o.quarantined}</div><div class="l">Quarantined</div></div>
+    <div class="card stat"><div class="n" style="color:${o.open_advice?'var(--yellow)':'var(--accent)'}">${o.open_advice}</div><div class="l">Open recommendations</div></div>
+  </div>
+  <div class="card"><h3 style="margin-bottom:8px">Recent scans</h3>
+  <table><tr><th>Kind</th><th>Started</th><th>Scanned</th><th>Skipped (cache)</th><th>Findings</th><th>Status</th></tr>
+  ${(o.recent_scans||[]).map(s=>`<tr><td>${esc(s.kind)}</td><td>${new Date(s.started_at).toLocaleString()}</td><td>${s.scanned}</td><td>${s.skipped}</td><td>${s.findings}</td><td>${tag(s.status)}</td></tr>`).join("")||"<tr><td colspan=6 class=muted>No scans yet</td></tr>"}
+  </table></div>`;
+},
+async findings(){
+  const list=await api("findings?status="+(window._fstat||""));
+  $("#view").innerHTML=`
+  <div class="card"><div class="row"><b>Findings</b>
+    <select style="width:auto" onchange="window._fstat=this.value;render()">
+      <option value="">all</option>${["open","quarantined","ignored","resolved"].map(s=>`<option ${window._fstat===s?"selected":""}>${s}</option>`).join("")}
+    </select></div>
+  <table><tr><th>Severity</th><th>Rule</th><th>File</th><th>Detail</th><th>Status</th><th></th></tr>
+  ${(list||[]).map(f=>`<tr><td>${tag(f.severity)}</td><td>${esc(f.rule)}<br><span class="muted small">${esc(f.site)}</span></td>
+   <td class="small">${esc(f.path)}</td><td class="small muted">${esc(f.detail)}</td><td>${tag(f.status)}</td>
+   <td>${f.status==="open"?`<button class="act warn" onclick="fact(${f.id},'quarantine')">Quarantine</button><button class="act ghost" onclick="fact(${f.id},'ignore')">Ignore</button>`:
+       f.status!=="quarantined"?`<button class="act ghost" onclick="fact(${f.id},'reopen')">Reopen</button>`:""}</td></tr>`).join("")||"<tr><td colspan=6 class=muted>Nothing here 🎉</td></tr>"}
+  </table></div>`;
+},
+async quar(){
+  const list=await api("quarantine");
+  $("#view").innerHTML=`<div class="card"><b>Quarantine</b>
+  <table><tr><th>ID</th><th>Original path</th><th>Rule</th><th>When</th><th></th></tr>
+  ${(list||[]).map(q=>`<tr><td class="small">${esc(q.id)}</td><td class="small">${esc(q.original_path)}</td><td>${esc(q.rule)}</td>
+   <td class="small">${new Date(q.quarantined_at).toLocaleString()}</td>
+   <td><button class="act ok" onclick="qact('${esc(q.id)}','restore')">Restore</button>
+       <button class="act warn" onclick="if(confirm('Permanently delete this file?'))qact('${esc(q.id)}','delete')">Delete</button></td></tr>`).join("")||"<tr><td colspan=5 class=muted>Empty</td></tr>"}
+  </table></div>`;
+},
+async scan(){
+  const st=await api("scan/status");
+  $("#view").innerHTML=`<div class="card"><b>Manual scan</b>
+   <p class="muted small" style="margin:8px 0">Runs the malware scan over the configured paths. The nightly full scan also verifies WordPress checksums and system health.</p>
+   <div class="row">
+     <button class="act ok" onclick="startScan('manual')">Start scan</button>
+     <button class="act" onclick="startScan('full')">Start full scan (incl. WP verify + syscheck)</button>
+   </div>
+   <div id="scanInfo" style="margin-top:12px" class="small muted">${st.running?`Running: ${st.done||0} files processed…`:"Idle"}</div></div>`;
+  if(st.running){clearTimeout(window._scanT);window._scanT=setTimeout(()=>tab==="scan"&&render(),2000)}
+},
+async sys(){
+  const list=(await api("findings?limit=1000")).filter(f=>f.site==="system");
+  $("#view").innerHTML=`<div class="card"><b>System health</b>
+   <p class="muted small" style="margin:8px 0">OS-level checks: modified binaries, droppers in /tmp, cron/systemd persistence, SSH keys, suspicious processes. Runs with the full scan.</p>
+  <table><tr><th>Severity</th><th>Check</th><th>Path</th><th>Detail</th><th>Status</th><th></th></tr>
+  ${list.map(f=>`<tr><td>${tag(f.severity)}</td><td>${esc(f.rule)}</td><td class="small">${esc(f.path)}</td><td class="small muted">${esc(f.detail)}</td><td>${tag(f.status)}</td>
+   <td>${f.status==="open"?`<button class="act ghost" onclick="fact(${f.id},'resolve')">Resolve</button><button class="act ghost" onclick="fact(${f.id},'ignore')">Ignore</button>`:""}</td></tr>`).join("")||"<tr><td colspan=6 class=muted>No system findings 🎉</td></tr>"}
+  </table></div>`;
+},
+async advice(){
+  const list=await api("advice");
+  $("#view").innerHTML=`<div class="card"><b>Security recommendations</b>
+  ${(list||[]).map(a=>`<div class="card" style="margin:10px 0 0">
+    <div class="row">${tag(a.severity)} <b>${esc(a.title)}</b> ${a.state!=="open"?tag(a.state):""}<div class="spacer" style="flex:1"></div>
+    ${a.state==="open"?`<button class="act ok" onclick="aact('${esc(a.id)}','done')">Done</button><button class="act ghost" onclick="aact('${esc(a.id)}','dismissed')">Dismiss</button>`:`<button class="act ghost" onclick="aact('${esc(a.id)}','open')">Reopen</button>`}</div>
+    <p class="small" style="margin-top:6px">${esc(a.detail)}</p>
+    <p class="small muted" style="margin-top:4px">💡 ${esc(a.remedy)}</p></div>`).join("")||"<p class=muted style='margin-top:8px'>No recommendations yet — run a full scan.</p>"}
+  </div>`;
+},
+async settings(){
+  const s=await api("settings");
+  $("#view").innerHTML=`<div class="card"><b>Settings</b><div id="smsg" class="msg"></div>
+   <label>Scan paths (one per line)</label><textarea id="s_paths" rows="3" style="width:100%;background:#0f172a;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px">${esc(s.scan_paths.join("\n"))}</textarea>
+   <div class="row">
+     <div style="flex:1"><label>Auto-quarantine</label><select id="s_auto">${["none","high","all"].map(v=>`<option ${s.quarantine_auto===v?"selected":""}>${v}</option>`).join("")}</select></div>
+     <div style="flex:1"><label>Quick scan interval</label><input id="s_quick" value="${esc(s.schedule_quick)}" placeholder="1h"></div>
+     <div style="flex:1"><label>Full scan (cron)</label><input id="s_full" value="${esc(s.schedule_full)}" placeholder="0 3 * * *"></div>
+   </div>
+   <h4 style="margin-top:16px">Telegram alerts</h4>
+   <div class="row"><label style="margin:8px 0"><input type="checkbox" id="s_tge" style="width:auto" ${s.tg_enabled?"checked":""}> Enabled</label></div>
+   <div class="row">
+     <div style="flex:1"><label>Bot token</label><input id="s_tgt" value="${esc(s.tg_bot_token)}"></div>
+     <div style="flex:1"><label>Chat ID</label><input id="s_tgc" value="${esc(s.tg_chat_id)}"></div>
+   </div>
+   <label>Proxy URL (optional — http://host:port or socks5://user:pass@host:port)</label>
+   <input id="s_tgp" value="${esc(s.tg_proxy_url)}" placeholder="http://127.0.0.1:8118">
+   <div class="row" style="margin-top:14px">
+     <button class="act ok" onclick="saveSettings()">Save</button>
+     <button class="act" onclick="testNotify()">Send test message</button>
+   </div></div>`;
+}};
+
+async function fact(id,a){await api(`findings/${id}/${a}`,{method:"POST"});render()}
+async function qact(id,a){try{await api(`quarantine/${id}/${a}`,{method:"POST"})}catch(e){alert(e.message)}render()}
+async function aact(id,s){await api(`advice/${id}/${s}`,{method:"POST"});render()}
+async function startScan(kind){try{await api("scan?kind="+kind,{method:"POST"})}catch(e){alert(e.message)}render()}
+async function saveSettings(){
+  const m=$("#smsg");
+  try{
+    await api("settings",{method:"POST",body:JSON.stringify({
+      scan_paths:$("#s_paths").value.split("\n").map(x=>x.trim()).filter(Boolean),
+      quarantine_auto:$("#s_auto").value,schedule_quick:$("#s_quick").value,schedule_full:$("#s_full").value,
+      tg_enabled:$("#s_tge").checked,tg_bot_token:$("#s_tgt").value,tg_chat_id:$("#s_tgc").value,tg_proxy_url:$("#s_tgp").value})});
+    m.textContent="Saved. The monitor service picks changes up on restart: systemctl restart sarv";m.className="msg ok";
+  }catch(e){m.textContent=e.message;m.className="msg err"}
+}
+async function testNotify(){const m=$("#smsg");try{await api("notify/test",{method:"POST"});m.textContent="Test message sent ✅ (save settings first if you changed them)";m.className="msg ok"}catch(e){m.textContent="Failed: "+e.message;m.className="msg err"}}
+
+(async()=>{try{await api("overview");show(true);render()}catch(e){show(false)}})();
+$("#pass").addEventListener("keydown",e=>e.key==="Enter"&&login());
+</script>
+</body>
+</html>

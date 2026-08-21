@@ -1,0 +1,52 @@
+# Sarv configuration. See https://github.com/samanzamani/sarv
+
+# Directories to scan for web malware.
+scan_paths:
+  - /www/wwwroot
+
+# Directory names skipped during scanning.
+exclude:
+  - node_modules
+  - .git
+  - .svn
+  - cache
+  - .cache
+  - lscache
+
+# Files larger than this (bytes) are not content-scanned.
+max_file_size: 5242880
+
+# Parallel scan workers (0 = NumCPU/2).
+workers: 0
+
+# Where the database, quarantine store, and caches live.
+data_dir: /var/lib/sarv
+
+quarantine:
+  # none = report only (recommended); high = auto-quarantine high/critical; all = everything.
+  auto: none
+
+schedule:
+  quick: 1h          # hourly scan of high-risk dirs (uploads, wp-content, public)
+  full: "0 3 * * *"  # nightly full scan + WP verify + syscheck + advisor (cron: min hour dom mon dow)
+
+telegram:
+  enabled: false
+  bot_token: ""
+  chat_id: ""
+  # Optional proxy. Iran servers often need one to reach api.telegram.org.
+  # HTTP:   http://127.0.0.1:8118        (privoxy)
+  # SOCKS5: socks5://user:pass@127.0.0.1:1080
+  proxy_url: ""
+
+web:
+  enabled: false          # set true to serve the panel from `sarv monitor`
+  listen: 127.0.0.1:8181  # use 0.0.0.0:PORT for remote access (put behind a firewall!)
+  username: admin
+  password_hash: ""       # set via: sarv web set-password
+  tls_cert: ""            # optional; enables HTTPS when both are set
+  tls_key: ""
+
+syscheck:
+  enabled: true
+  verify_binaries: true   # compare system binaries against dpkg md5sums (debsums-style)
