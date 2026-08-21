@@ -16,6 +16,7 @@
   severity: critical
   # Anchored to real superglobals. A looser `eval($_...` pattern also matched
   # legit locals like psysh's $__psysh__, so it was removed.
+  extensions: [php, phtml, php5, php7, phar, inc]
   regex:
     - 'eval\s*\(\s*\$_(POST|GET|REQUEST|COOKIE|SERVER|FILES)\s*\['
     - 'assert\s*\(\s*\$_(POST|GET|REQUEST|COOKIE|SERVER|FILES)\s*\['
@@ -24,15 +25,19 @@
 - id: php-variable-function-request
   description: request parameter invoked as a function ($_POST[x]($_POST[y]))
   severity: critical
+  extensions: [php, phtml, php5, php7, phar, inc]
   regex:
     - '\$_(POST|GET|REQUEST|COOKIE)\s*\[[^\]]{1,40}\]\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)'
 
 - id: php-system-request
   description: shell execution fed by request input
   severity: critical
+  # PHP-executable extensions only: editor syntax files (ace-builds mode-php.js)
+  # list these function names as keyword data but never execute.
+  extensions: [php, phtml, php5, php7, phar, inc]
   regex:
     - '(system|passthru|shell_exec|exec|popen|proc_open)\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)'
-    - 'pcntl_exec\s*\('
+    - 'pcntl_exec\s*\(\s*\$_(POST|GET|REQUEST|COOKIE)'
 
 # Note: a dedicated backtick-execution rule was removed — PHP docblocks across
 # WordPress/Laravel write `$_POST['x']` as inline-code markdown, which is

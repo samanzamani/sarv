@@ -52,6 +52,9 @@ func TestCleanFilesPass(t *testing.T) {
 		{`<?php file_get_contents($stub); file_put_contents($to, $c);`, "php"},          // installer copy
 		{"; auto_prepend_file =\nauto_prepend_file =\n", "ini"},                         // stock php.ini (commented + empty)
 		{"$wp_version = '6.9';\n$wp_local_package = 'fa_IR';", "php"},                   // localized version.php
+		// PHP-language rules must not fire on non-PHP files (editor syntax data):
+		{`var php = {keywords:"system|exec|passthru", snippet:"system($_POST[x])"};`, "js"}, // ace-builds mode-php.js
+		{`function pcntl_exec($path){ /* thecodingmachine/safe wrapper */ }`, "php"},         // safe lib wrapper, not request-fed
 	}
 	for i, c := range clean {
 		if m := e.Scan([]byte(c.content), c.ext); len(m) > 0 {

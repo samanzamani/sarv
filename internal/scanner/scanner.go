@@ -129,6 +129,11 @@ func (s *Scanner) ScanOne(path string) {
 }
 
 func shouldScanName(name string) bool {
+	// AppleDouble resource-fork files ("._foo.php") from unzipped macOS archives
+	// are binary junk that trips content heuristics; never scan them.
+	if strings.HasPrefix(name, "._") {
+		return false
+	}
 	base := strings.ToLower(name)
 	if base == ".htaccess" || base == ".user.ini" || base == "php.ini" {
 		return true

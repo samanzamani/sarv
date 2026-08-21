@@ -12,6 +12,7 @@ exclude:
   - cache
   - .cache
   - lscache
+  - __MACOSX
 
 # Files larger than this (bytes) are not content-scanned.
 max_file_size: 5242880

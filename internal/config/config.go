@@ -71,7 +71,7 @@ type SyscheckConfig struct {
 func Default() *Config {
 	return &Config{
 		ScanPaths:   []string{"/www/wwwroot"},
-		Exclude:     []string{"node_modules", ".git", ".svn", "cache", ".cache", "lscache"},
+		Exclude:     []string{"node_modules", ".git", ".svn", "cache", ".cache", "lscache", "__MACOSX"},
 		MaxFileSize: 5 * 1024 * 1024,
 		Workers:     0,
 		DataDir:     "/var/lib/sarv",

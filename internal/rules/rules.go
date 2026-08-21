@@ -114,11 +114,22 @@ func (r *Rule) compile() error {
 		}
 		r.compiled = append(r.compiled, c)
 	}
-	if len(r.Extensions) > 0 {
+	// Extension scoping:
+	//   - explicit list  → match only those extensions
+	//   - ["*"]          → match any extension (opt-in for cross-type rules)
+	//   - omitted        → default to PHP-executable extensions, since every
+	//                      cross-type rule (js/htaccess/ini/image) sets its own
+	//                      list and a bare PHP-language rule must not match e.g.
+	//                      an editor's mode-php.js keyword data.
+	if len(r.Extensions) == 1 && r.Extensions[0] == "*" {
+		r.extSet = nil
+	} else if len(r.Extensions) > 0 {
 		r.extSet = make(map[string]bool, len(r.Extensions))
 		for _, e := range r.Extensions {
 			r.extSet[strings.ToLower(strings.TrimPrefix(e, "."))] = true
 		}
+	} else {
+		r.extSet = map[string]bool{"php": true, "phtml": true, "php5": true, "php7": true, "phar": true, "inc": true}
 	}
 	return nil
 }
