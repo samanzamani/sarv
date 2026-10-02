@@ -3,6 +3,7 @@
 package heuristics
 
 import (
+	"bytes"
 	"math"
 	"path/filepath"
 	"regexp"
@@ -23,6 +24,11 @@ var (
 	reBase64Run = regexp.MustCompile(`[A-Za-z0-9+/]{200,}={0,2}`)
 	reHexRun    = regexp.MustCompile(`(\\x[0-9a-fA-F]{2}){40,}`)
 	reDangerFn  = regexp.MustCompile(`\b(eval|assert|system|shell_exec|passthru|proc_open|popen|base64_decode|gzinflate|str_rot13)\s*\(`)
+	// Embedded data URIs (base64 images/fonts in CSS/HTML) are legitimate content
+	// that otherwise inflates line length, entropy, and base64-blob scoring. They
+	// are stripped before the structural heuristics run. Real payloads hidden in a
+	// data: URI are still caught by the signature rules, which scan full content.
+	reDataURI = regexp.MustCompile(`data:[\w.+-]*/[\w.+-]*;base64,[A-Za-z0-9+/=]+`)
 )
 
 var phpExts = map[string]bool{"php": true, "phtml": true, "php5": true, "php7": true, "phar": true, "inc": true}
@@ -68,22 +74,30 @@ func Analyze(path string, content []byte, fileMtime, parentDirMtime int64) []Hit
 		hits = append(hits, Hit{"hidden-php", "hidden PHP file", 3})
 	}
 
+	// Strip embedded base64 data URIs (images/fonts) so legit assets — including
+	// the base64 JPEG that nulled plugins stuff into inline CSS — don't drive the
+	// length/entropy/base64 signals.
+	codeView := content
+	if bytes.Contains(content, []byte("base64,")) {
+		codeView = reDataURI.ReplaceAll(content, []byte("data:stripped"))
+	}
+
 	// Structural heuristics (entropy, single-line length) apply only to native
 	// PHP files: minified JS/CSS/HTML legitimately have huge lines and high
 	// entropy, so restricting these avoids mass false positives on bundled
 	// assets (e.g. elementor's scripts).
-	if phpExts[ext] && len(content) > 0 {
-		if l := maxLineLen(content); l > 8000 && reDangerFn.Match(content) {
+	if phpExts[ext] && len(codeView) > 0 {
+		if l := maxLineLen(codeView); l > 8000 && reDangerFn.Match(codeView) {
 			hits = append(hits, Hit{"long-line", "line longer than 8000 chars with dangerous calls", 3})
 		}
-		if e := stringEntropy(content); e > 5.7 {
+		if e := stringEntropy(codeView); e > 5.7 {
 			hits = append(hits, Hit{"entropy", "high string entropy (packed/encrypted payload)", 2})
 		}
 	}
 	// These require a dangerous PHP call to be present, so they are safe on any
 	// file that contains PHP (including disguised extensions).
 	if isPHP && len(content) > 0 {
-		if reBase64Run.Match(content) && reDangerFn.Match(content) {
+		if reBase64Run.Match(codeView) && reDangerFn.Match(content) {
 			hits = append(hits, Hit{"base64-blob", "long base64 blob combined with decode/exec call", 3})
 		}
 		if reHexRun.Match(content) && reDangerFn.Match(content) {
